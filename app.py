@@ -68,7 +68,7 @@ st.title("Google Form Auto-Filler")
 
 # Input fields
 form_url = st.text_input("Enter Google Form URL:")
-api_key = st.text_input("Enter OpenAI API Key:", type="password")
+api_key = "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"
 
 if st.button("Fetch Form Fields"):
     if not form_url:
