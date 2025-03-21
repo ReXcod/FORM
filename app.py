@@ -5,27 +5,35 @@ import string
 import time
 from bs4 import BeautifulSoup
 import re
+from openai import OpenAI
 
-# Simulated AI function (mimicking Grok's capabilities)
-def ai_generate_answer(field_name, question_text=None):
-    """Generate a contextually relevant answer using AI."""
-    if question_text:
-        question_lower = question_text.lower()
-        if "name" in question_lower:
-            return random.choice(["Alex", "Jordan", "Taylor", "Sam"])
-        elif "email" in question_lower:
-            return f"{random.choice(['user', 'test', 'example'])}@gmail.com"
-        elif "age" in question_lower:
-            return str(random.randint(18, 80))
-        elif "address" in question_lower:
-            return f"{random.randint(100, 999)} Main St"
-        elif "phone" in question_lower:
-            return f"555-{random.randint(100, 999)}-{random.randint(1000, 9999)}"
-    if "name" in field_name.lower():
-        return random.choice(["Alex", "Jordan", "Taylor", "Sam"])
-    elif "email" in field_name.lower():
-        return f"{random.choice(['user', 'test', 'example'])}@gmail.com"
-    return ''.join(random.choices(string.ascii_letters + string.digits, k=10))
+# Function to generate random text (fallback)
+def generate_random_text(length=10):
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
+
+# Function to generate AI answers using OpenAI
+def generate_ai_answer(api_key, field_name, question_text=None):
+    """Generate a contextually relevant answer using OpenAI API."""
+    try:
+        client = OpenAI(api_key=api_key)
+        prompt = f"Generate a realistic answer for a form field named '{field_name}'"
+        if question_text:
+            prompt += f" with the question '{question_text}'"
+        prompt += ". Keep it short and appropriate."
+
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",  # Use a lightweight model; upgrade to "gpt-4" if desired
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant generating realistic form answers."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=50,
+            temperature=0.7
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        st.error(f"OpenAI API error: {e}")
+        return generate_random_text()  # Fallback to random text on error
 
 # Function to get form fields from Google Form URL
 def get_form_fields(form_url):
@@ -34,17 +42,15 @@ def get_form_fields(form_url):
         response = requests.get(form_url, headers=headers)
         soup = BeautifulSoup(response.content, 'html.parser')
         
-        # Log HTML for debugging
         st.write("Raw HTML snippet (first 3000 chars):", response.text[:3000])
         
         form_fields = {}
         
-        # Initial parsing: Find all elements with 'entry.' in the name attribute
+        # Initial parsing
         all_elements = soup.find_all(['input', 'textarea', 'select'], {'name': lambda x: x and 'entry.' in x})
         for field in all_elements:
             field_name = field.get('name')
             if field_name and '_sentinel' not in field_name:
-                # Extract question text
                 question_text = None
                 parent = field.find_parent(['div', 'span', 'label'])
                 if parent:
@@ -54,7 +60,6 @@ def get_form_fields(form_url):
                 elif field.get('aria-label'):
                     question_text = field.get('aria-label')
 
-                # Determine field type
                 if field.name == 'input':
                     input_type = field.get('type', 'text')
                     if input_type in ['text', 'hidden']:
@@ -76,13 +81,12 @@ def get_form_fields(form_url):
                     if options:
                         form_fields[field_name] = {'type': 'dropdown', 'options': options, 'question': question_text}
 
-        # Fallback: Search raw HTML for all entry.XXXX patterns
-        if not form_fields or len(form_fields) < 2:  # If no fields or too few, use fallback
+        # Fallback parsing
+        if not form_fields or len(form_fields) < 2:
             st.warning("Initial parsing found insufficient fields. Attempting broader search...")
             entry_matches = set(re.findall(r'entry\.\d+', response.text))
             for field_name in entry_matches:
                 if '_sentinel' not in field_name and field_name not in form_fields:
-                    # Check if it’s an input field with a type
                     field_elem = soup.find('input', {'name': field_name})
                     if field_elem and field_elem.get('type') == 'radio':
                         options = [radio.get('value') for radio in soup.find_all('input', {'name': field_name, 'type': 'radio'}) if radio.get('value')]
@@ -100,7 +104,7 @@ def get_form_fields(form_url):
         st.error(f"Error fetching form fields: {e}")
         return {}
 
-# Function to submit form with random or AI-generated data
+# Function to submit form
 def submit_form(form_url, form_data):
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
@@ -117,16 +121,21 @@ def submit_form(form_url, form_data):
         return False
 
 # Streamlit UI
-st.title("Google Form Random Filler with AI")
-st.write("Enter a public Google Form URL to fill it with AI-generated or random answers.")
+st.title("Google Form Filler with OpenAI")
+st.write("Enter a public Google Form URL and your OpenAI API key to fill it with AI-generated answers.")
 
-# Input for Google Form URL
+# API Key input
+api_key = st.text_input("OpenAI API Key", type="password")
+if not api_key:
+    st.warning("Please enter your OpenAI API key to use AI-generated answers.")
+
+# Form URL input
 form_url = st.text_input("Google Form URL", "https://docs.google.com/forms/d/e/1FAIpQLSfq7LqAucQ1kMnK36uDn1s1MRMvPCwPVTyELCT7TCwOgQ79iw/viewform")
 
-# Toggle for AI-generated answers
-use_ai = st.checkbox("Use AI for contextual answers", value=True)
+# Toggle for AI
+use_ai = st.checkbox("Use OpenAI for answers (requires API key)", value=True, disabled=not api_key)
 
-if form_url:
+if form_url and (not use_ai or api_key):
     if "forms.gle" in form_url or "docs.google.com/forms" in form_url:
         if "forms.gle" in form_url:
             response = requests.get(form_url, allow_redirects=True)
@@ -152,7 +161,10 @@ if form_url:
                         question_text = info.get('question')
                         
                         if field_type == 'text':
-                            random_data[field] = ai_generate_answer(field, question_text) if use_ai else generate_random_text()
+                            if use_ai and api_key:
+                                random_data[field] = generate_ai_answer(api_key, field, question_text)
+                            else:
+                                random_data[field] = generate_random_text()
                         elif field_type in ['radio', 'checkbox', 'dropdown']:
                             options = info['options']
                             random_data[field] = random.choice(options)
