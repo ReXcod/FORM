@@ -15,13 +15,24 @@ def get_form_fields(form_url):
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
         response = requests.get(form_url, headers=headers)
         soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # Log raw HTML for debugging
+        st.write("Raw HTML snippet (first 1000 chars):", response.text[:1000])
+        
         form_fields = {}
 
-        # Extract text fields (entry.XXX)
+        # Look for all inputs with 'entry.' in the name
         inputs = soup.find_all('input', {'name': lambda x: x and 'entry.' in x})
         for input_field in inputs:
             field_name = input_field.get('name')
             if field_name and '_sentinel' not in field_name:  # Exclude sentinel fields
+                form_fields[field_name] = 'text'
+
+        # Look for hidden inputs (sometimes used for form metadata)
+        hidden_inputs = soup.find_all('input', {'type': 'hidden'})
+        for hidden in hidden_inputs:
+            field_name = hidden.get('name')
+            if field_name and 'entry.' in field_name:
                 form_fields[field_name] = 'text'
 
         # Extract multiple-choice fields (radio buttons)
