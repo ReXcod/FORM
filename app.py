@@ -102,9 +102,3 @@ if form_url:
             st.warning("Could not detect any form fields. Please check the URL.")
     else:
         st.error("Please enter a valid Google Form URL (e.g., containing 'forms.gle' or 'docs.google.com/forms').")
-
-# Instructions for deployment
-st.markdown("""
-### How to Deploy:
-1. Save this code in a file named `app.py`.
-2. Create a `requirements.txt` file with:
