@@ -105,6 +105,6 @@ if form_url:
 
 # Instructions for deployment
 st.markdown("""
-### Incorrect Form URL:
-The URL you provided might not be a valid Google Form URL or might not point to a "viewform" page.
-Ensure it’s a public Google Form URL (e.g., https://forms.gle/xyz or https://docs.google.com/forms/d/e/[FORM_ID]/viewform).
+### How to Deploy:
+1. Save this code in a file named `app.py`.
+2. Create a `requirements.txt` file with:
