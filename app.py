@@ -5,18 +5,28 @@ import string
 import time
 from bs4 import BeautifulSoup
 
-# Function to generate random text
-def generate_random_text(length=10):
-    return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
+# Simulated AI function (in practice, this would call an xAI API or use my capabilities)
+def ai_generate_answer(field_name, question_text=None):
+    """Generate a contextually relevant answer using AI."""
+    # For demonstration, use simple rules; in reality, I'd use my language model
+    if "name" in field_name.lower() or (question_text and "name" in question_text.lower()):
+        return random.choice(["Alex", "Jordan", "Taylor", "Sam"])
+    elif "email" in field_name.lower() or (question_text and "email" in question_text.lower()):
+        return f"{random.choice(['user', 'test', 'example'])}@gmail.com"
+    elif "age" in field_name.lower() or (question_text and "age" in question_text.lower()):
+        return str(random.randint(18, 80))
+    else:
+        # Default to random text if no context
+        return ''.join(random.choices(string.ascii_letters + string.digits, k=10))
 
-# Function to get form fields from Google Form URL
+# Function to get form fields and question text from Google Form URL
 def get_form_fields(form_url):
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
         response = requests.get(form_url, headers=headers)
         soup = BeautifulSoup(response.content, 'html.parser')
         
-        # Log more HTML to ensure fields are visible
+        # Log HTML for debugging
         st.write("Raw HTML snippet (first 3000 chars):", response.text[:3000])
         
         form_fields = {}
@@ -26,42 +36,49 @@ def get_form_fields(form_url):
         for field in all_inputs:
             field_name = field.get('name')
             if field_name and '_sentinel' not in field_name:
-                # Determine field type
+                # Try to find associated question text (e.g., from nearby label or aria-label)
+                question_text = None
+                label = field.find_previous(['label', 'div'], text=True)
+                if label:
+                    question_text = label.get_text(strip=True)
+                elif field.get('aria-label'):
+                    question_text = field.get('aria-label')
+
                 if field.name == 'input':
                     input_type = field.get('type', 'text')
                     if input_type in ['text', 'hidden']:
-                        form_fields[field_name] = 'text'
+                        form_fields[field_name] = {'type': 'text', 'question': question_text}
                     elif input_type == 'radio':
                         if field_name not in form_fields:
                             options = [radio.get('value') for radio in soup.find_all('input', {'name': field_name, 'type': 'radio'}) if radio.get('value')]
                             if options:
-                                form_fields[field_name] = options
+                                form_fields[field_name] = {'type': 'radio', 'options': options, 'question': question_text}
                     elif input_type == 'checkbox':
                         if field_name not in form_fields:
                             options = [checkbox.get('value') for checkbox in soup.find_all('input', {'name': field_name, 'type': 'checkbox'}) if checkbox.get('value')]
                             if options:
-                                form_fields[field_name] = options
+                                form_fields[field_name] = {'type': 'checkbox', 'options': options, 'question': question_text}
                 elif field.name == 'textarea':
-                    form_fields[field_name] = 'text'
+                    form_fields[field_name] = {'type': 'text', 'question': question_text}
                 elif field.name == 'select':
                     options = [option.get('value') for option in field.find_all('option') if option.get('value')]
                     if options:
-                        form_fields[field_name] = options
+                        form_fields[field_name] = {'type': 'dropdown', 'options': options, 'question': question_text}
 
-        # Include hidden fields with preset values
+        # Include hidden fields
         hidden_inputs = soup.find_all('input', {'type': 'hidden', 'name': lambda x: x and 'entry.' in x})
         for hidden in hidden_inputs:
             field_name = hidden.get('name')
             if field_name and '_sentinel' not in field_name and field_name not in form_fields:
                 value = hidden.get('value', '')
-                form_fields[field_name] = value if value else 'text'
+                form_fields[field_name] = {'type': 'hidden', 'value': value if value else None, 'question': None}
 
         return form_fields
     except Exception as e:
         st.error(f"Error fetching form fields: {e}")
         return {}
 
-# Function to submit form with random data
+# Function to submit form with random or AI-generated data
 def submit_form(form_url, form_data):
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
@@ -78,11 +95,14 @@ def submit_form(form_url, form_data):
         return False
 
 # Streamlit UI
-st.title("Google Form Random Filler")
-st.write("Enter a public Google Form URL to automatically fill it with random answers.")
+st.title("Google Form Random Filler with AI")
+st.write("Enter a public Google Form URL to fill it with AI-generated or random answers.")
 
-# Input for Google Form URL with default
+# Input for Google Form URL
 form_url = st.text_input("Google Form URL", "https://docs.google.com/forms/d/e/1FAIpQLSfq7LqAucQ1kMnK36uDn1s1MRMvPCwPVTyELCT7TCwOgQ79iw/viewform")
+
+# Toggle for AI-generated answers
+use_ai = st.checkbox("Use AI for contextual answers", value=True)
 
 if form_url:
     if "forms.gle" in form_url or "docs.google.com/forms" in form_url:
@@ -101,17 +121,21 @@ if form_url:
 
             num_submissions = st.slider("Number of Submissions", 1, 10, 1)
 
-            if st.button("Submit Random Answers"):
+            if st.button("Submit Answers"):
                 success_count = 0
                 for i in range(num_submissions):
                     random_data = {}
-                    for field, value in form_fields.items():
-                        if value == 'text':
-                            random_data[field] = generate_random_text()
-                        elif isinstance(value, list):  # MCQ, checkbox, or dropdown
-                            random_data[field] = random.choice(value)
-                        elif isinstance(value, str):  # Hidden field with preset value
-                            random_data[field] = value
+                    for field, info in form_fields.items():
+                        field_type = info['type']
+                        question_text = info.get('question')
+                        
+                        if field_type == 'text':
+                            random_data[field] = ai_generate_answer(field, question_text) if use_ai else generate_random_text()
+                        elif field_type in ['radio', 'checkbox', 'dropdown']:
+                            options = info['options']
+                            random_data[field] = random.choice(options)
+                        elif field_type == 'hidden':
+                            random_data[field] = info['value'] if info['value'] else generate_random_text()
                     
                     if submit_form(submit_url, random_data):
                         success_count += 1
