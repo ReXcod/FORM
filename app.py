@@ -21,7 +21,6 @@ def ai_generate_answer(field_name, question_text=None):
             return f"{random.randint(100, 999)} Main St"
         elif "phone" in question_lower:
             return f"555-{random.randint(100, 999)}-{random.randint(1000, 9999)}"
-    # Fallback based on field name if no question text
     if "name" in field_name.lower():
         return random.choice(["Alex", "Jordan", "Taylor", "Sam"])
     elif "email" in field_name.lower():
@@ -40,14 +39,12 @@ def get_form_fields(form_url):
         
         form_fields = {}
         
-        # Find all 'entry.' fields using a broader approach
-        entry_pattern = re.compile(r'entry\.\d+')
-        all_elements = soup.find_all(True, {'name': entry_pattern})
-        
+        # Initial parsing: Find all elements with 'entry.' in the name attribute
+        all_elements = soup.find_all(['input', 'textarea', 'select'], {'name': lambda x: x and 'entry.' in x})
         for field in all_elements:
             field_name = field.get('name')
             if field_name and '_sentinel' not in field_name:
-                # Extract question text from nearby elements
+                # Extract question text
                 question_text = None
                 parent = field.find_parent(['div', 'span', 'label'])
                 if parent:
@@ -79,22 +76,24 @@ def get_form_fields(form_url):
                     if options:
                         form_fields[field_name] = {'type': 'dropdown', 'options': options, 'question': question_text}
 
-        # Include hidden fields
-        hidden_inputs = soup.find_all('input', {'type': 'hidden', 'name': entry_pattern})
-        for hidden in hidden_inputs:
-            field_name = hidden.get('name')
-            if field_name and '_sentinel' not in field_name and field_name not in form_fields:
-                value = hidden.get('value', '')
-                form_fields[field_name] = {'type': 'hidden', 'value': value if value else None, 'question': None}
-
-        if not form_fields:
-            st.warning("No fields detected with initial parsing. Attempting broader search...")
-            # Fallback: Search HTML string for entry.XXXX patterns
-            entry_matches = re.findall(r'entry\.\d+', response.text)
-            for field_name in set(entry_matches):
+        # Fallback: Search raw HTML for all entry.XXXX patterns
+        if not form_fields or len(form_fields) < 2:  # If no fields or too few, use fallback
+            st.warning("Initial parsing found insufficient fields. Attempting broader search...")
+            entry_matches = set(re.findall(r'entry\.\d+', response.text))
+            for field_name in entry_matches:
                 if '_sentinel' not in field_name and field_name not in form_fields:
-                    # Assume text field if no other info
-                    form_fields[field_name] = {'type': 'text', 'question': None}
+                    # Check if it’s an input field with a type
+                    field_elem = soup.find('input', {'name': field_name})
+                    if field_elem and field_elem.get('type') == 'radio':
+                        options = [radio.get('value') for radio in soup.find_all('input', {'name': field_name, 'type': 'radio'}) if radio.get('value')]
+                        if options:
+                            form_fields[field_name] = {'type': 'radio', 'options': options, 'question': None}
+                    elif field_elem and field_elem.get('type') == 'checkbox':
+                        options = [checkbox.get('value') for checkbox in soup.find_all('input', {'name': field_name, 'type': 'checkbox'}) if checkbox.get('value')]
+                        if options:
+                            form_fields[field_name] = {'type': 'checkbox', 'options': options, 'question': None}
+                    else:
+                        form_fields[field_name] = {'type': 'text', 'question': None}
 
         return form_fields
     except Exception as e:
