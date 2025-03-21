@@ -16,62 +16,45 @@ def get_form_fields(form_url):
         response = requests.get(form_url, headers=headers)
         soup = BeautifulSoup(response.content, 'html.parser')
         
-        # Log raw HTML for debugging
-        st.write("Raw HTML snippet (first 1000 chars):", response.text[:1000])
+        # Log more HTML to ensure fields are visible
+        st.write("Raw HTML snippet (first 3000 chars):", response.text[:3000])
         
         form_fields = {}
 
-        # Text inputs (short answer, paragraph)
-        text_inputs = soup.find_all(['input', 'textarea'], {'name': lambda x: x and 'entry.' in x})
-        for input_field in text_inputs:
-            field_name = input_field.get('name')
+        # Find all elements with 'entry.' in the name attribute
+        all_inputs = soup.find_all(['input', 'textarea', 'select'], {'name': lambda x: x and 'entry.' in x})
+        for field in all_inputs:
+            field_name = field.get('name')
             if field_name and '_sentinel' not in field_name:
-                form_fields[field_name] = 'text'
+                # Determine field type
+                if field.name == 'input':
+                    input_type = field.get('type', 'text')
+                    if input_type in ['text', 'hidden']:
+                        form_fields[field_name] = 'text'
+                    elif input_type == 'radio':
+                        if field_name not in form_fields:
+                            options = [radio.get('value') for radio in soup.find_all('input', {'name': field_name, 'type': 'radio'}) if radio.get('value')]
+                            if options:
+                                form_fields[field_name] = options
+                    elif input_type == 'checkbox':
+                        if field_name not in form_fields:
+                            options = [checkbox.get('value') for checkbox in soup.find_all('input', {'name': field_name, 'type': 'checkbox'}) if checkbox.get('value')]
+                            if options:
+                                form_fields[field_name] = options
+                elif field.name == 'textarea':
+                    form_fields[field_name] = 'text'
+                elif field.name == 'select':
+                    options = [option.get('value') for option in field.find_all('option') if option.get('value')]
+                    if options:
+                        form_fields[field_name] = options
 
-        # Hidden inputs (sometimes required for submission)
+        # Include hidden fields with preset values
         hidden_inputs = soup.find_all('input', {'type': 'hidden', 'name': lambda x: x and 'entry.' in x})
         for hidden in hidden_inputs:
             field_name = hidden.get('name')
-            if field_name and '_sentinel' not in field_name:
+            if field_name and '_sentinel' not in field_name and field_name not in form_fields:
                 value = hidden.get('value', '')
                 form_fields[field_name] = value if value else 'text'
-
-        # Multiple-choice fields (radio buttons)
-        mcq_fields = soup.find_all('div', {'role': 'radiogroup'})
-        for mcq in mcq_fields:
-            field_name = None
-            options = []
-            for input_field in mcq.find_all('input', {'type': 'radio'}):
-                name = input_field.get('name')
-                value = input_field.get('value')
-                if name and 'entry.' in name and value and '_sentinel' not in name:
-                    field_name = name
-                    options.append(value)
-            if field_name and options:
-                form_fields[field_name] = options
-
-        # Checkbox fields
-        checkbox_fields = soup.find_all('div', {'role': 'checkbox'})
-        for checkbox in checkbox_fields:
-            field_name = None
-            options = []
-            for input_field in checkbox.find_all('input', {'type': 'checkbox'}):
-                name = input_field.get('name')
-                value = input_field.get('value')
-                if name and 'entry.' in name and value and '_sentinel' not in name:
-                    field_name = name
-                    options.append(value)
-            if field_name and options:
-                form_fields[field_name] = options
-
-        # Dropdown fields (select tags)
-        dropdowns = soup.find_all('select', {'name': lambda x: x and 'entry.' in x})
-        for dropdown in dropdowns:
-            field_name = dropdown.get('name')
-            if field_name and '_sentinel' not in field_name:
-                options = [option.get('value') for option in dropdown.find_all('option') if option.get('value')]
-                if options:
-                    form_fields[field_name] = options
 
         return form_fields
     except Exception as e:
@@ -98,8 +81,8 @@ def submit_form(form_url, form_data):
 st.title("Google Form Random Filler")
 st.write("Enter a public Google Form URL to automatically fill it with random answers.")
 
-# Input for Google Form URL
-form_url = st.text_input("Google Form URL", "")
+# Input for Google Form URL with default
+form_url = st.text_input("Google Form URL", "https://docs.google.com/forms/d/e/1FAIpQLSfq7LqAucQ1kMnK36uDn1s1MRMvPCwPVTyELCT7TCwOgQ79iw/viewform")
 
 if form_url:
     if "forms.gle" in form_url or "docs.google.com/forms" in form_url:
