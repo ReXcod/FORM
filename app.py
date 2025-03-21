@@ -4,22 +4,31 @@ import random
 import string
 import time
 from bs4 import BeautifulSoup
+import re
 
-# Simulated AI function (in practice, this would call an xAI API or use my capabilities)
+# Simulated AI function (mimicking Grok's capabilities)
 def ai_generate_answer(field_name, question_text=None):
     """Generate a contextually relevant answer using AI."""
-    # For demonstration, use simple rules; in reality, I'd use my language model
-    if "name" in field_name.lower() or (question_text and "name" in question_text.lower()):
+    if question_text:
+        question_lower = question_text.lower()
+        if "name" in question_lower:
+            return random.choice(["Alex", "Jordan", "Taylor", "Sam"])
+        elif "email" in question_lower:
+            return f"{random.choice(['user', 'test', 'example'])}@gmail.com"
+        elif "age" in question_lower:
+            return str(random.randint(18, 80))
+        elif "address" in question_lower:
+            return f"{random.randint(100, 999)} Main St"
+        elif "phone" in question_lower:
+            return f"555-{random.randint(100, 999)}-{random.randint(1000, 9999)}"
+    # Fallback based on field name if no question text
+    if "name" in field_name.lower():
         return random.choice(["Alex", "Jordan", "Taylor", "Sam"])
-    elif "email" in field_name.lower() or (question_text and "email" in question_text.lower()):
+    elif "email" in field_name.lower():
         return f"{random.choice(['user', 'test', 'example'])}@gmail.com"
-    elif "age" in field_name.lower() or (question_text and "age" in question_text.lower()):
-        return str(random.randint(18, 80))
-    else:
-        # Default to random text if no context
-        return ''.join(random.choices(string.ascii_letters + string.digits, k=10))
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=10))
 
-# Function to get form fields and question text from Google Form URL
+# Function to get form fields from Google Form URL
 def get_form_fields(form_url):
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
@@ -30,20 +39,25 @@ def get_form_fields(form_url):
         st.write("Raw HTML snippet (first 3000 chars):", response.text[:3000])
         
         form_fields = {}
-
-        # Find all elements with 'entry.' in the name attribute
-        all_inputs = soup.find_all(['input', 'textarea', 'select'], {'name': lambda x: x and 'entry.' in x})
-        for field in all_inputs:
+        
+        # Find all 'entry.' fields using a broader approach
+        entry_pattern = re.compile(r'entry\.\d+')
+        all_elements = soup.find_all(True, {'name': entry_pattern})
+        
+        for field in all_elements:
             field_name = field.get('name')
             if field_name and '_sentinel' not in field_name:
-                # Try to find associated question text (e.g., from nearby label or aria-label)
+                # Extract question text from nearby elements
                 question_text = None
-                label = field.find_previous(['label', 'div'], text=True)
-                if label:
-                    question_text = label.get_text(strip=True)
+                parent = field.find_parent(['div', 'span', 'label'])
+                if parent:
+                    text_elem = parent.find(string=True, recursive=True)
+                    if text_elem:
+                        question_text = text_elem.strip()
                 elif field.get('aria-label'):
                     question_text = field.get('aria-label')
 
+                # Determine field type
                 if field.name == 'input':
                     input_type = field.get('type', 'text')
                     if input_type in ['text', 'hidden']:
@@ -66,12 +80,21 @@ def get_form_fields(form_url):
                         form_fields[field_name] = {'type': 'dropdown', 'options': options, 'question': question_text}
 
         # Include hidden fields
-        hidden_inputs = soup.find_all('input', {'type': 'hidden', 'name': lambda x: x and 'entry.' in x})
+        hidden_inputs = soup.find_all('input', {'type': 'hidden', 'name': entry_pattern})
         for hidden in hidden_inputs:
             field_name = hidden.get('name')
             if field_name and '_sentinel' not in field_name and field_name not in form_fields:
                 value = hidden.get('value', '')
                 form_fields[field_name] = {'type': 'hidden', 'value': value if value else None, 'question': None}
+
+        if not form_fields:
+            st.warning("No fields detected with initial parsing. Attempting broader search...")
+            # Fallback: Search HTML string for entry.XXXX patterns
+            entry_matches = re.findall(r'entry\.\d+', response.text)
+            for field_name in set(entry_matches):
+                if '_sentinel' not in field_name and field_name not in form_fields:
+                    # Assume text field if no other info
+                    form_fields[field_name] = {'type': 'text', 'question': None}
 
         return form_fields
     except Exception as e:
