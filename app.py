@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import random
 import string
+import time
 from bs4 import BeautifulSoup
 
 # Function to generate random text
@@ -11,7 +12,8 @@ def generate_random_text(length=10):
 # Function to get form fields from Google Form URL
 def get_form_fields(form_url):
     try:
-        response = requests.get(form_url)
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        response = requests.get(form_url, headers=headers)
         soup = BeautifulSoup(response.content, 'html.parser')
         form_fields = {}
         
@@ -38,10 +40,13 @@ def get_form_fields(form_url):
 # Function to submit form with random data
 def submit_form(form_url, form_data):
     try:
-        response = requests.post(form_url, data=form_data)
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        response = requests.post(form_url, data=form_data, headers=headers)
         if response.status_code == 200:
             return True
         else:
+            st.write(f"Submission failed with status code: {response.status_code}")
+            st.write(f"Response: {response.text[:500]}")  # Show first 500 chars for debugging
             return False
     except Exception as e:
         st.error(f"Error submitting form: {e}")
@@ -49,7 +54,7 @@ def submit_form(form_url, form_data):
 
 # Streamlit UI
 st.title("Google Form Random Filler")
-st.write("Enter a Google Form URL to automatically fill it with random answers.")
+st.write("Enter a public Google Form URL to automatically fill it with random answers.")
 
 # Input for Google Form URL
 form_url = st.text_input("Google Form URL", "")
@@ -78,7 +83,7 @@ if form_url:
 
             if st.button("Submit Random Answers"):
                 success_count = 0
-                for _ in range(num_submissions):
+                for i in range(num_submissions):
                     random_data = {}
                     for field, value in form_fields.items():
                         if isinstance(value, str):  # Text field
@@ -89,6 +94,8 @@ if form_url:
                     # Submit the form
                     if submit_form(submit_url, random_data):
                         success_count += 1
+                    st.write(f"Submission {i+1}/{num_submissions} completed.")
+                    time.sleep(1)  # 1-second delay to avoid rate-limiting
                 
                 st.success(f"Successfully submitted {success_count} out of {num_submissions} forms!")
         else:
@@ -98,9 +105,4 @@ if form_url:
 
 # Instructions for deployment
 st.markdown("""
-### How to Deploy:
-1. Save this code in a file named `app.py`.
-2. Push it to a GitHub repository.
-3. Go to [Streamlit Community Cloud](https://streamlit.io/cloud), sign in with GitHub, and select your repository.
-4. Deploy the app, and you'll get a public URL to access it.
-""")
+### Ensure it’s a public Google Form URL (e.g., https://forms.gle/xyz or https://docs.google.com/forms/d/e/[FORM_ID]/viewform).
