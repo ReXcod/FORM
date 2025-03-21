@@ -17,32 +17,38 @@ def get_form_fields(form_url):
         soup = BeautifulSoup(response.content, 'html.parser')
         form_fields = {}
 
-        # Look for input fields with 'entry.' IDs (Google Forms convention)
+        # Extract text fields (entry.XXX)
         inputs = soup.find_all('input', {'name': lambda x: x and 'entry.' in x})
         for input_field in inputs:
             field_name = input_field.get('name')
-            if field_name:
+            if field_name and '_sentinel' not in field_name:  # Exclude sentinel fields
                 form_fields[field_name] = 'text'
 
-        # Find multiple-choice fields (radio buttons)
+        # Extract multiple-choice fields (radio buttons)
         mcq_fields = soup.find_all('div', {'role': 'radiogroup'})
         for mcq in mcq_fields:
             field_name = None
             options = []
-            for input_field in mcq.find_all('input', {'name': lambda x: x and 'entry.' in x}):
-                field_name = input_field.get('name')
-                options = [opt.get('value') for opt in mcq.find_all('input', {'type': 'radio'}) if opt.get('value')]
+            for input_field in mcq.find_all('input', {'type': 'radio'}):
+                name = input_field.get('name')
+                value = input_field.get('value')
+                if name and 'entry.' in name and value:
+                    field_name = name
+                    options.append(value)
             if field_name and options:
                 form_fields[field_name] = options
 
-        # Find checkbox fields
+        # Extract checkbox fields
         checkbox_fields = soup.find_all('div', {'role': 'checkbox'})
         for checkbox in checkbox_fields:
             field_name = None
             options = []
-            for input_field in checkbox.find_all('input', {'name': lambda x: x and 'entry.' in x}):
-                field_name = input_field.get('name')
-                options = [opt.get('value') for opt in checkbox.find_all('input', {'type': 'checkbox'}) if opt.get('value')]
+            for input_field in checkbox.find_all('input', {'type': 'checkbox'}):
+                name = input_field.get('name')
+                value = input_field.get('value')
+                if name and 'entry.' in name and value:
+                    field_name = name
+                    options.append(value)
             if field_name and options:
                 form_fields[field_name] = options
 
@@ -55,7 +61,7 @@ def get_form_fields(form_url):
 def submit_form(form_url, form_data):
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        st.write("Submitting payload:", form_data)  # Debug payload
+        st.write("Submitting payload:", form_data)
         response = requests.post(form_url, data=form_data, headers=headers)
         if response.status_code == 200:
             return True
@@ -96,7 +102,7 @@ if form_url:
                 for i in range(num_submissions):
                     random_data = {}
                     for field, value in form_fields.items():
-                        if isinstance(value, str) and value == 'text':
+                        if value == 'text':
                             random_data[field] = generate_random_text()
                         elif isinstance(value, list):  # MCQ or checkbox
                             random_data[field] = random.choice(value)
@@ -108,6 +114,6 @@ if form_url:
                 
                 st.success(f"Successfully submitted {success_count} out of {num_submissions} forms!")
         else:
-            st.warning("Could not detect any form fields. Please check the URL.")
+            st.warning("Could not detect any form fields. Please check the URL or form structure.")
     else:
         st.error("Please enter a valid Google Form URL (e.g., containing 'forms.gle' or 'docs.google.com/forms').")
